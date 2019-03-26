@@ -32,22 +32,33 @@ tf.flags.DEFINE_integer(
 tf.flags.DEFINE_integer(
     'image_height', 224, 'Height of each input images.')
 tf.flags.DEFINE_integer(
-    'batch_size', 16, 'How many images process at one time.')
+    'batch_size', 8, 'How many images process at one time.')
 tf.flags.DEFINE_integer(
     'num_classes', 110, 'Number of Classes')
 tf.flags.DEFINE_float(
-    'eps', 1, 'eps')
+    'eps', 6, 'eps')
 tf.flags.DEFINE_float(
-    'lamda', 3, 'lamda')
+    'lamda', 10000, 'lamda')
 tf.flags.DEFINE_float(
     'noise', 1.0, 'noise')
 tf.flags.DEFINE_integer(
-    'attack_iter', 10000, 'attack iterations')
+    'attack_iter', 100, 'attack iterations')
 
 FLAGS = tf.flags.FLAGS
 
 
-def load_images(input_dir, batch_shape):
+def get_label(input_dir):
+    fstr = []
+    label = []
+    with open(os.path.join(input_dir, 'dev.csv'), 'r') as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            fstr.append(row['filename'])
+            label.append(row['trueLabel'])
+    return fstr, label
+
+
+def load_images(input_dir, batch_shape, fstr, label):
     images = np.zeros(batch_shape)
     labels = np.zeros(batch_shape[0], dtype=np.int32)
     filenames = []
@@ -56,21 +67,13 @@ def load_images(input_dir, batch_shape):
 
     idx = 0
     batch_size = batch_shape[0]
-    fstr = []
-    label = []
-    with open(os.path.join(input_dir, 'dev.csv'), 'r') as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            fstr.append(row['filename'])
-            label.append(row['trueLabel'])
+
     with open(os.path.join(input_dir, 'dev.csv'), 'r') as f:
         reader = csv.DictReader(f)
         for row in reader:
             filepath = os.path.join(input_dir, row['filename'])
 
-            for i in range(len(label)):
-                if label[i] == row['targetedLabel']:
-                    filepath2 = fstr[i]
+            filepath2 = fstr[label.index(row['targetedLabel'])]
 
             with open(filepath, 'rb') as f:
                 raw_image = imread(f, mode='RGB').astype(np.float)
@@ -222,7 +225,7 @@ def main(_):
     batch_shape = [FLAGS.batch_size, FLAGS.image_height, FLAGS.image_width, 3]
     nb_classes = FLAGS.num_classes
     tf.logging.set_verbosity(tf.logging.INFO)
-
+    fstr, label = get_label(FLAGS.input_dir)
     with tf.Graph().as_default():
         # Prepare graph
         x_input = tf.placeholder(tf.float32, shape=batch_shape)
@@ -236,7 +239,8 @@ def main(_):
             saver = tf.train.Saver(slim.get_model_variables())
             saver.restore(sess, FLAGS.checkpoint_path)
 
-            for filenames, images, tlabels, target_images in load_images(FLAGS.input_dir, batch_shape):
+            for filenames, images, tlabels, target_images in load_images(FLAGS.input_dir, batch_shape, fstr, label):
+
                 adv_images = images + FLAGS.noise * np.random.normal(size=(FLAGS.batch_size, 224, 224, 3))
                 adv_res = sess.run(x_adv,
                                    feed_dict={
